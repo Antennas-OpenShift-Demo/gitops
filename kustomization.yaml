@@ -1,0 +1,33 @@
+namespace: antennas-prod
+
+helmCharts:
+- name: mariadb
+  version: 0.1.0
+  repo: https://gitlab.com/api/v4/projects/39850850/packages/helm/stable
+  releaseName: antennas
+  valuesInline:
+    db:
+      dbname: "antennas"
+      username: "antennas"
+      password: "secret"
+      rootpassword: "secret"
+- name: antennas-front
+  version: 0.0.1
+  releaseName: antennas-front
+  valuesInline:
+    incident:
+      apikey: super-secret
+      url: http://antennas-incident:8080
+- name: antennas-incident
+  version: 0.0.1
+  releaseName: antennas-incident
+  valuesInline:
+    apikey: super-secret
+    db:
+      hostname: "antennas-mariadb"
+      dbname: "antennas"
+      username: "antennas"
+      password: "secret"
+
+resources:
+- route.yaml

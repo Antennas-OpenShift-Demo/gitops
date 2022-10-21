@@ -1,0 +1,7 @@
+incident:
+  apikey: "" # API Key to call the incident service
+  url: "" # URL of the incident service
+image:
+  repository: "quay.io/redhat_sa_france/antennas-front"
+  tag: latest
+  pullPolicy: Always

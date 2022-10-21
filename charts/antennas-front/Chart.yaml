@@ -1,0 +1,4 @@
+apiVersion: v2
+name: antennas-front
+version: 0.0.1
+description: antennas-front

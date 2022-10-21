@@ -1,0 +1,10 @@
+apikey: "" # API key required to query this service
+db:
+  hostname: "" # database hostname
+  dbname: ""   # database name
+  username: "" # username to connect to database
+  password: "" # password to connect to database
+image:
+  repository: "quay.io/redhat_sa_france/antennas-incident"
+  tag: latest
+  pullPolicy: Always
