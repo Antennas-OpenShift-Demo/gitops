@@ -1,2 +1,2 @@
-base/charts/mariadb
-base/charts/mariadb-*.tgz
+charts/mariadb
+charts/mariadb-*.tgz

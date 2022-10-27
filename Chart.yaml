@@ -1,0 +1,12 @@
+apiVersion: v2
+name: antennas
+version: 0.0.1
+description: antennas application
+dependencies:
+- name: antennas-front
+  version: 0.0.1
+- name: antennas-incident
+  version: 0.0.1
+- name: mariadb
+  version: 0.0.1
+  repository: https://gitlab.com/api/v4/projects/39850850/packages/helm/stable

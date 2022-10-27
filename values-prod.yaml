@@ -1,0 +1,19 @@
+mariadb:
+  db:
+    dbname: "antennas"
+    username: "antennas"
+    password: "secret"
+    rootpassword: "secret"
+antennas-incident:
+  fullnameOverride: antennas-incident
+  apikey: super-secret
+  db:
+    hostname: "antennas-mariadb"
+    dbname: "antennas"
+    username: "antennas"
+    password: "secret"
+antennas-front:
+  fullnameOverride: antennas-front
+  incident:
+    apikey: super-secret
+    url: http://antennas-incident:8080
