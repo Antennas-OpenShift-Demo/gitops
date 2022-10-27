@@ -1,5 +1,10 @@
-bases:
-- ../base
 namespace: antennas-prod
 resources:
 - route.yaml
+- ../base
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+images:
+- digest: sha256:a34af0d8efbd8f370111a91a3284e4d26c0aa5c18a550fb57cb3ef50d8e936ee
+  name: quay.io/redhat_sa_france/antennas-front
+  newName: quay.io/nmasse_itix/antennas-front
