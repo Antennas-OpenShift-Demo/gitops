@@ -12,8 +12,15 @@ antennas-incident:
     dbname: "antennas"
     username: "antennas"
     password: "secret"
-antennas-front:
-  fullnameOverride: antennas-front
+antennas-front-blue:
+  fullnameOverride: antennas-front-blue
   incident:
     apikey: super-secret
     url: http://antennas-incident:8080
+antennas-front-green:
+  fullnameOverride: antennas-front-green
+  incident:
+    apikey: super-secret
+    url: http://antennas-incident:8080
+route:
+  target: blue

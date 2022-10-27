@@ -5,6 +5,10 @@ description: antennas application
 dependencies:
 - name: antennas-front
   version: 0.0.1
+  alias: antennas-front-blue
+- name: antennas-front
+  version: 0.0.1
+  alias: antennas-front-green
 - name: antennas-incident
   version: 0.0.1
 - name: mariadb

@@ -1,11 +1,11 @@
 kind: Route
 apiVersion: route.openshift.io/v1
 metadata:
-  name: antennas-front
+  name: antennas-front-green
 spec:
   to:
     kind: Service
-    name: antennas-front-{{ .Values.route.target }}
+    name: antennas-front-green
     weight: 100
   port:
     targetPort: http
