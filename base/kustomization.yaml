@@ -16,8 +16,6 @@ helmCharts:
     incident:
       apikey: super-secret
       url: http://antennas-incident:8080
-    image:
-      repository: quay.io/nmasse_itix/antennas-front
 - name: antennas-incident
   version: 0.0.1
   releaseName: antennas-incident
@@ -28,5 +26,3 @@ helmCharts:
       dbname: "antennas"
       username: "antennas"
       password: "secret"
-    image:
-      repository: quay.io/nmasse_itix/antennas-incident
