@@ -1,4 +1,5 @@
 mariadb:
+  fullnameOverride: antennas-mariadb
   db:
     dbname: "antennas"
     username: "antennas"

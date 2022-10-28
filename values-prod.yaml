@@ -1,4 +1,5 @@
 mariadb:
+  fullnameOverride: antennas-mariadb
   db:
     dbname: "antennas"
     username: "antennas"
@@ -17,6 +18,3 @@ antennas-front:
   incident:
     apikey: super-secret
     url: http://antennas-incident:8080
-  image:
-    repository: quay.io/nmasse_itix/antennas-front
-    digest: sha256:16b65c05d9b1c17fcb703c27e3847104a80d8a9015d07cdbaf0ccfd83ed49bbe
