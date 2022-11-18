@@ -35,6 +35,12 @@ oc get route -n openshift-gitops openshift-gitops-server -o jsonpath='https://{.
 oc label namespace antennas-prod argocd.argoproj.io/managed-by=openshift-gitops
 ```
 
+* Give admin access rights on the **antennas-prod** namespace to the **OpenShift Gitops** operator.
+
+```sh
+oc adm policy add-role-to-user admin -n antennas-prod system:serviceaccount:openshift-gitops:openshift-gitops-argocd-application-controller
+```
+
 * Create the `antennas-prod` application.
 
 ```sh
