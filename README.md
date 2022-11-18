@@ -55,6 +55,9 @@ spec:
     helm:
       valueFiles:
       - values-prod.yaml
+      parameters:
+      - name: antennas-front.image.repository
+        value: quay.io/nmasse_itix/antennas-front
   project: default
   syncPolicy:
     automated:
@@ -114,7 +117,7 @@ spec:
   tags: openshift, test
 ```
 
-Go to your [Gitlab profile](https://gitlab.com/-/profile/personal_access_tokens) and generate a Personal Access Token with the **read_repository** and **write_repository**.
+Go to your [Gitlab profile](https://gitlab.com/-/profile/personal_access_tokens) and generate a Personal Access Token with the **api**, **read_api**, **read_user**, **read_repository** and **write_repository**.
 
 Go on [quay.io](https://quay.io/), click on your name, select **Account Settings** and generate an encrypted password.
 
@@ -126,14 +129,13 @@ Add two variables:
 
 * `QUAY_USERNAME`: contains your Quay.io username
 * `QUAY_PASSWORD`: contains your Quay.io encrypted password
-* `GITLAB_ACCESS_TOKEN`: contains your GitLab Personal Access Token
+* `GITLAB_TOKEN`: contains your GitLab Personal Access Token
 
-Do not forget to add the **Masked** flag to the `QUAY_PASSWORD` and `GITLAB_ACCESS_TOKEN` variables!
+Do not forget to add the **Masked** flag to the `QUAY_PASSWORD` and `GITLAB_TOKEN` variables!
 
-Create two public repositories on quay.io
+Create a public repository on quay.io
 
 * antennas-front
-* antennas-incident
 
 Give the gitlab runner the right to manage the test namespace.
 
@@ -276,6 +278,134 @@ helm-update:
 # to complete.
 #
 deploy-test:
+  stage: test# This file is a template, and might need editing before it works on your project.
+# This is a sample GitLab CI/CD configuration file that should run without any modifications.
+# It demonstrates a basic 3 stage CI/CD pipeline. Instead of real tests or scripts,
+# it uses echo commands to simulate the pipeline execution.
+#
+# A pipeline is composed of independent jobs that run scripts, grouped into stages.
+# Stages run in sequential order, but jobs within stages run in parallel.
+#
+# For more information, see: https://docs.gitlab.com/ee/ci/yaml/index.html#stages
+
+stages:
+  - build
+  - test
+  - deploy
+
+default:
+  tags:
+    - "openshift"
+
+#
+# HEADS UP ! You will need to change those variables to match the location of
+# your Quay.io repository and GitLab git repository.
+#
+variables:
+  ANTENNAS_FRONT_IMAGE: quay.io/nmasse_itix/antennas-front
+  ANTENNAS_GITOPS_REPOSITORY: gitlab.com/nmasse-itix/antennas-gitops.git
+  BOT_EMAIL: nicolas.masse@itix.fr
+
+#
+# Build the source code of antennas-front, using Maven.
+#
+maven-build:
+  stage: build
+  image: maven:3.8.6-jdk-11
+  variables:
+    # This will suppress any download for dependencies and plugins or upload messages which would clutter the console log.
+    # `showDateTime` will show the passed time in milliseconds. You need to specify `--batch-mode` to make this work.
+    MAVEN_OPTS: "-Dhttps.protocols=TLSv1.2 -Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=WARN -Dorg.slf4j.simpleLogger.showDateTime=true -Djava.awt.headless=true"
+    # As of Maven 3.3.0 instead of this you may define these options in `.mvn/maven.config` so the same config is used
+    # when running from the command line.
+    # `installAtEnd` and `deployAtEnd` are only effective with recent version of the corresponding plugins.
+    MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end --show-version -DinstallAtEnd=true -DdeployAtEnd=true"
+  artifacts:
+    paths:
+      - target/
+  # Cache downloaded dependencies and plugins between builds.
+  # To keep cache across branches add 'key: "$CI_JOB_NAME"'
+  cache:
+    paths:
+      - .m2/repository
+  script:
+    - mvn $MAVEN_CLI_OPTS clean package
+
+#
+# Clone the Git repository containing all the YAML manifests needed to deploy
+# the complete application.
+#
+# Note that .git files do not fit very well with Gitlab CI artefact management,
+# so we pack and unpack the git repo before and after each usage.
+#
+clone-gitops:
+  stage: build
+  image: ghcr.io/profclems/glab:v1.21.1
+  artifacts:
+    paths:
+    - antennas-gitops.tgz
+  script:
+    - glab repo clone https://${ANTENNAS_GITOPS_REPOSITORY}
+    - tar -zcf antennas-gitops.tgz antennas-gitops
+
+#
+# Build the container image of antennas-front using buildah.
+#
+# Note: the digest of the newly built image is written in "antennas-front.iid".
+# this digest is then used to update the YAML files in the antennas-gitops
+# repository.
+#
+buildah:
+  stage: build
+  variables:
+    STORAGE_DRIVER: "vfs"
+    BUILDAH_FORMAT: "docker"
+  needs: [ "maven-build" ]
+  image: quay.io/buildah/stable:v1.27
+  artifacts:
+    paths:
+      - antennas-front.iid
+  script:
+    - buildah login -u "$QUAY_USERNAME" -p "$QUAY_PASSWORD" quay.io
+    - buildah build -f src/main/docker/Dockerfile.jvm -t ${ANTENNAS_FRONT_IMAGE}:latest .
+    - buildah push --tls-verify=false --digestfile antennas-front.iid ${ANTENNAS_FRONT_IMAGE}:latest
+
+#
+# Update the Helm values files to use the newly built image.
+#
+# Note: yq (https://mikefarah.gitbook.io/) is used to update values.yaml
+#
+helm-update:
+  stage: build
+  needs: [ "buildah", "clone-gitops" ]
+  image: docker.io/mikefarah/yq:4.28.2
+  artifacts:
+    paths:
+      - antennas-gitops.tgz
+  script: |
+    #!/bin/sh
+    set -Eeuo pipefail
+
+    # Get back the antennas-gitops repository from the Gitlab CI artifacts
+    tar -zxf antennas-gitops.tgz
+
+    # Update the Helm values files with the newly built image digest (and new name if not already done)
+    ANTENNAS_FRONT_IMAGE_DIGEST="$(cat antennas-front.iid)"
+    yq -i ".antennas-front.image.digest = \"${ANTENNAS_FRONT_IMAGE_DIGEST}\"" antennas-gitops/values-prod.yaml
+    yq -i ".antennas-front.image.digest = \"${ANTENNAS_FRONT_IMAGE_DIGEST}\"" antennas-gitops/values-test.yaml
+
+    # In the test environment, also update the image repository
+    yq -i ".antennas-front.image.repository = \"${ANTENNAS_FRONT_IMAGE}\"" antennas-gitops/values-test.yaml
+
+    # Re-archive the antennas-gitops repository
+    rm -f antennas-gitops.tgz
+    tar -zcf antennas-gitops.tgz antennas-gitops
+
+#
+# Deploy the application in a test environment and wait for the deployment
+# to complete.
+#
+deploy-test:
   stage: test
   needs: [ "helm-update" ]
   environment: test
@@ -317,13 +447,13 @@ deploy-prod:
   stage: deploy
   needs: [ "helm-update", "integration-test" ]
   environment: production
-  image: docker.io/alpine/git:2.36.3
+  image: ghcr.io/profclems/glab:v1.21.1
   script: |
     #!/bin/sh
     set -Eeuo pipefail
 
     # Inject git credentials
-    echo "https://ci:${GITLAB_ACCESS_TOKEN}@${ANTENNAS_GITOPS_REPOSITORY}" > ~/.git-credentials
+    echo "https://ci:${GITLAB_TOKEN}@gitlab.com" > ~/.git-credentials
     chmod 600 ~/.git-credentials
 
     tar -zxf antennas-gitops.tgz
@@ -331,11 +461,14 @@ deploy-prod:
     cd antennas-gitops
 
     # Commit the changes to the antennas-gitops repository
+    git config credential.helper store
     git config user.email "nmasse@redhat.com"
     git config user.name "Gitlab-CI Bot"
     git add values-prod.yaml
-    git commit -m 'update production image digest'    
-    git push
+
+    # Create the Merge Request to do the switch between blue and green
+    git commit -m 'update production image digest'
+    git push origin main
 ```
 
 ### Blue-green version
@@ -370,7 +503,8 @@ default:
 #
 variables:
   ANTENNAS_FRONT_IMAGE: quay.io/nmasse_itix/antennas-front
-  ANTENNAS_GITOPS_REPOSITORY: gitlab.com/nmasse-itix/antennas-gitops.git
+  ANTENNAS_GITOPS_REPOSITORY: gitlab.com/nmasse-itix/antennas-gitops
+  BOT_EMAIL: nicolas.masse@itix.fr
 
 #
 # Build the source code of antennas-front, using Maven.
@@ -406,12 +540,12 @@ maven-build:
 #
 clone-gitops:
   stage: build
-  image: docker.io/alpine/git:2.36.3
+  image: ghcr.io/profclems/glab:v1.21.1
   artifacts:
     paths:
     - antennas-gitops.tgz
   script:
-    - git clone https://ci:${GITLAB_ACCESS_TOKEN}@${ANTENNAS_GITOPS_REPOSITORY}
+    - glab repo clone https://${ANTENNAS_GITOPS_REPOSITORY} -- -b blue-green
     - tar -zcf antennas-gitops.tgz antennas-gitops
 
 #
@@ -485,12 +619,21 @@ helm-update:
       ;;
     esac
 
+    # Save the targets since it will be needed in the next steps
+    echo -n "$TARGET_PROD" > antennas-gitops/target-prod
+    echo -n "$TARGET_TEST" > antennas-gitops/target-test
+
     # Update the Helm values files with the newly built image digest (and new name if not already done)
     ANTENNAS_FRONT_IMAGE_DIGEST="$(cat antennas-front.iid)"
     yq -i ".antennas-front-${TARGET_PROD}.image.repository = \"${ANTENNAS_FRONT_IMAGE}\"" antennas-gitops/values-prod.yaml
     yq -i ".antennas-front-${TARGET_TEST}.image.repository = \"${ANTENNAS_FRONT_IMAGE}\"" antennas-gitops/values-test.yaml
     yq -i ".antennas-front-${TARGET_PROD}.image.digest = \"${ANTENNAS_FRONT_IMAGE_DIGEST}\"" antennas-gitops/values-prod.yaml
     yq -i ".antennas-front-${TARGET_TEST}.image.digest = \"${ANTENNAS_FRONT_IMAGE_DIGEST}\"" antennas-gitops/values-test.yaml
+
+    # The test environment switches from blue to green (and vice versa) automatically
+    # whereas the production environment will need a merge request.
+    yq -i ".route.target = \"${TARGET_TEST}\"" antennas-gitops/values-test.yaml
+    yq ".route.target = \"${TARGET_PROD}\"" antennas-gitops/values-prod.yaml > antennas-gitops/values-prod.yaml.merge-request
 
     # Re-archive the antennas-gitops repository
     rm -f antennas-gitops.tgz
@@ -521,7 +664,8 @@ deploy-test:
     oc apply -n antennas-test -f test-manifests.yaml
 
     # Wait for the deployment to complete
-    oc rollout status deploy/antennas-front -n antennas-test --timeout=5m
+    TARGET_TEST="$(cat antennas-gitops/target-test)"
+    oc rollout status deploy/antennas-front-${TARGET_TEST} -n antennas-test --timeout=5m
 
 #
 # Run some integration tests in the test environment.
@@ -530,11 +674,15 @@ deploy-test:
 #
 integration-test:
   stage: test
-  needs: [ "deploy-test" ]
+  needs: [ "deploy-test", "helm-update" ]
   image: registry.access.redhat.com/ubi8/ubi:8.6
-  script:
-    - echo "Running integration tests..."
-    - curl -vf http://antennas-front-blue.antennas-test.svc:8080/rest/incidents
+  script: |
+    #!/bin/sh
+    set -Eeuo pipefail
+    echo "Running integration tests..."
+    tar -zxf antennas-gitops.tgz
+    TARGET_TEST="$(cat antennas-gitops/target-test)"
+    curl -vf http://antennas-front-${TARGET_TEST}.antennas-test.svc:8080/rest/incidents
 
 #
 # Commit the changes in the antennas-gitops repository so that ArgoCD can pick
@@ -544,13 +692,13 @@ deploy-prod:
   stage: deploy
   needs: [ "helm-update", "integration-test" ]
   environment: production
-  image: docker.io/alpine/git:2.36.3
+  image: ghcr.io/profclems/glab:v1.21.1
   script: |
     #!/bin/sh
     set -Eeuo pipefail
 
     # Inject git credentials
-    echo "https://ci:${GITLAB_ACCESS_TOKEN}@${ANTENNAS_GITOPS_REPOSITORY}" > ~/.git-credentials
+    echo "https://ci:${GITLAB_TOKEN}@gitlab.com" > ~/.git-credentials
     chmod 600 ~/.git-credentials
 
     tar -zxf antennas-gitops.tgz
@@ -558,9 +706,18 @@ deploy-prod:
     cd antennas-gitops
 
     # Commit the changes to the antennas-gitops repository
-    git config user.email "nmasse@redhat.com"
+    git config credential.helper store
+    git config user.email "$BOT_EMAIL"
     git config user.name "Gitlab-CI Bot"
     git add values-prod.yaml
-    git commit -m 'update production image digest'    
+    git commit -m 'update production image digest'
     git push
+
+    # Create the Merge Request to do the switch between blue and green
+    git checkout -b "antennas-front-${CI_PIPELINE_ID}"
+    mv values-prod.yaml.merge-request values-prod.yaml
+    git add values-prod.yaml
+    TARGET_PROD="$(cat target-prod)"
+    git commit -m "Update production route to $TARGET_PROD"
+    NO_PROMPT=1 GITLAB_HOST=gitlab.com glab mr create --fill -H ${ANTENNAS_GITOPS_REPOSITORY} --remove-source-branch -b blue-green -y
 ```
